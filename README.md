@@ -79,5 +79,28 @@ npm run dev
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
 
+## 日期分区连续性校验
+
+`backend/app/services/date_partition.py` 提供以业务月（YYYY-MM）为粒度的逐日核对，
+替代原先“只看数量”的校验（空分区、重复键、缺日不再能错误通过）：
+
+- 三态结论：`完整` / `异常`（重复键、缺日）/ `暂无数据`；重复日期键不抵扣缺日，
+  闰年 2 月 29 日与范围首尾两天都在应到集合内逐项核对。
+- 校验记录显式绑定起止日期、覆盖分区、关联事实与数据指纹，
+  旧范围的通过结论不会被新范围复用，数据变化后旧结论自动失效。
+- 补数会话防并发补数；进行中或已中断的分区视为“可能只落库一半”，
+  事实交付门禁与发布动作都会拦截，补齐后可按业务月单独重验。
+
+对外接口（`backend/app/routers/date_validation.py`）：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/date-validation/continuity?start=&end=&fact=` | 按起止日期输出连续性结论，写清确认范围与待补齐日期 |
+| POST | `/api/date-validation/partitions/{月}/validate` | 重验指定业务月（失败分区补齐后的单独重试） |
+| POST | `/api/date-validation/partitions/{月}/backfill` | 补齐缺日并清理重复键，并发补数会被拒绝 |
+| GET | `/api/date-validation/facts/{事实}/delivery?months=` | 事实分区交付门禁：可交付分区与仍缺日期键 |
+| POST | `/api/date-validation/facts/{事实}/revalidate?month=` | 事实视角重验指定业务月 |
+| GET | `/api/date-validation/records` | 校验记录（起止日期 + 覆盖分区 + 数据指纹） |
+
 领域：数据工程
 子方向：数仓与数据湖

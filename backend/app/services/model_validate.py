@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from app.services import date_partition as dp
 from app.services.base import BaseModuleService
 from app.store import store
 
@@ -212,10 +213,34 @@ def _check_measure_not_null(target_model: str, expected: str) -> dict[str, Any]:
 
 
 def _check_date_continuity(target_model: str, expected: str) -> dict[str, Any]:
-    """检查日期连续性。"""
-    if "date" in target_model.lower() or "时间" in target_model or "日期" in target_model:
-        return {"passed": True, "actual": "365天完整", "diff": ""}
-    return {"passed": True, "actual": "日期分区完整", "diff": ""}
+    """基于日期维度真实数据做连续性校验，替代原先只看数量的模拟通过。
+
+    逐分区核对后输出完整 / 异常（重复键、缺日）/ 暂无数据结论，
+    差异说明写清待补齐日期、重复键和空态分区。
+    """
+    partitions = dp.partitions_present(store)
+    if not partitions:
+        return {"passed": False, "actual": "日期维度暂无数据", "diff": "date_dim_gen 中没有可用日期记录"}
+    start = dp.month_bounds(partitions[0])[0]
+    end = dp.month_bounds(partitions[-1])[1]
+    conclusion = dp.validate_window(start, end, store)
+    if conclusion["status"] == dp.VERDICT_COMPLETE:
+        return {
+            "passed": True,
+            "actual": f"{len(partitions)} 个分区连续完整（{conclusion['start_date']}~{conclusion['end_date']}）",
+            "diff": "",
+        }
+    diff_parts: list[str] = []
+    pending = conclusion["pending_dates"]
+    if pending:
+        sample = "、".join(pending[:5]) + (f" 等 {len(pending)} 天" if len(pending) > 5 else "")
+        diff_parts.append(f"待补齐 {sample}")
+    if conclusion["duplicate_dates"]:
+        diff_parts.append("重复键 " + "、".join(
+            f"{key}×{cnt}" for key, cnt in conclusion["duplicate_dates"].items()))
+    if conclusion["empty_partitions"]:
+        diff_parts.append("暂无数据分区 " + "、".join(conclusion["empty_partitions"]))
+    return {"passed": False, "actual": conclusion["summary"], "diff": "；".join(diff_parts)}
 
 
 def _check_dim_association_rate(target_model: str, expected: str) -> dict[str, Any]:

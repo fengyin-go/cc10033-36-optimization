@@ -1,7 +1,52 @@
 """示例数据：为各业务模块准备真实业务场景的种子记录，支持跨模块数据流验证。"""
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Any
+
+
+def _date_dim_seed_rows() -> list[dict[str, Any]]:
+    """日期维度种子：2026-09 补齐为完整分区，其余月份保留稀疏记录。
+
+    这样跨月校验时一个分区已确认（2026-09）、其余分区仍缺日，
+    可以直接演示连续性结论的确认范围与待补齐日期。
+    """
+    rows: list[dict[str, Any]] = [
+        {'id': 1, 'status': '已生成', 'pending': False, 'abnormal': False,
+         '日期键': '20260901', '完整日期': '2026-09-01',
+         '年份': '2026', '季度': 'Q3', '月份': '09', '周次': '36', '是否假日': '否'},
+        {'id': 2, 'status': '已验证', 'pending': True, 'abnormal': False,
+         '日期键': '20261001', '完整日期': '2026-10-01',
+         '年份': '2026', '季度': 'Q4', '月份': '10', '周次': '40', '是否假日': '是'},
+        {'id': 3, 'status': '需更新', 'pending': True, 'abnormal': True,
+         '日期键': '20261101', '完整日期': '2026-11-01',
+         '年份': '2026', '季度': 'Q4', '月份': '11', '周次': '44', '是否假日': '否'},
+        {'id': 4, 'status': '已生成', 'pending': False, 'abnormal': False,
+         '日期键': '20260915', '完整日期': '2026-09-15',
+         '年份': '2026', '季度': 'Q3', '月份': '09', '周次': '38', '是否假日': '否'},
+        {'id': 5, 'status': '已生成', 'pending': False, 'abnormal': False,
+         '日期键': '20261231', '完整日期': '2026-12-31',
+         '年份': '2026', '季度': 'Q4', '月份': '12', '周次': '53', '是否假日': '是'},
+    ]
+    # 补齐 2026-09 剩余日期（09-01 与 09-15 已存在），构成完整分区
+    existing = {"2026-09-01", "2026-09-15"}
+    holidays = {"2026-09-27"}
+    next_id = 101
+    day = date(2026, 9, 1)
+    while day.month == 9:
+        iso = day.isoformat()
+        if iso not in existing:
+            rows.append({
+                'id': next_id, 'status': '已生成', 'pending': False, 'abnormal': False,
+                '日期键': iso.replace('-', ''), '完整日期': iso,
+                '年份': '2026', '季度': 'Q3', '月份': '09',
+                '周次': str(day.isocalendar()[1]),
+                '是否假日': '是' if iso in holidays else '否',
+            })
+            next_id += 1
+        day += timedelta(days=1)
+    return rows
+
 
 SEED_ROWS: dict[str, list[dict[str, Any]]] = {
     # ---------- 维度建模（3模块互相消费）----------
@@ -395,23 +440,7 @@ SEED_ROWS: dict[str, list[dict[str, Any]]] = {
          '变更字段': 'channel_category', '旧值': '线上', '新值': '线上平台',
          '变更时间': '2025-08-01', '变更原因': '渠道分类调整'},
     ],
-    "date_dim_gen": [
-        {'id': 1, 'status': '已生成', 'pending': False, 'abnormal': False,
-         '日期键': '20260901', '完整日期': '2026-09-01',
-         '年份': '2026', '季度': 'Q3', '月份': '09', '周次': '36', '是否假日': '否'},
-        {'id': 2, 'status': '已验证', 'pending': True, 'abnormal': False,
-         '日期键': '20261001', '完整日期': '2026-10-01',
-         '年份': '2026', '季度': 'Q4', '月份': '10', '周次': '40', '是否假日': '是'},
-        {'id': 3, 'status': '需更新', 'pending': True, 'abnormal': True,
-         '日期键': '20261101', '完整日期': '2026-11-01',
-         '年份': '2026', '季度': 'Q4', '月份': '11', '周次': '44', '是否假日': '否'},
-        {'id': 4, 'status': '已生成', 'pending': False, 'abnormal': False,
-         '日期键': '20260915', '完整日期': '2026-09-15',
-         '年份': '2026', '季度': 'Q3', '月份': '09', '周次': '38', '是否假日': '否'},
-        {'id': 5, 'status': '已生成', 'pending': False, 'abnormal': False,
-         '日期键': '20261231', '完整日期': '2026-12-31',
-         '年份': '2026', '季度': 'Q4', '月份': '12', '周次': '53', '是否假日': '是'},
-    ],
+    "date_dim_gen": _date_dim_seed_rows(),
     "model_validate": [
         {'id': 1, 'status': '通过', 'pending': False, 'abnormal': False,
          '规则名称': '销售事实键值校验', '目标模型': 'dwd_sales_detail',
